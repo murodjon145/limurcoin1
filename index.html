@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🚀 LimurCoin Combat</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { display:flex; flex-direction:column; align-items:center; padding:20px; margin:0; font-family:Arial,sans-serif; background:#f0f0f5; }
+    h1 { margin-bottom:10px; }
+    .panel { width:100%; max-width:400px; background:#fff; padding:15px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.1); margin-bottom:15px; display:flex; flex-direction:column; }
+    .panel div { margin:5px 0; font-size:16px; }
+    .panel progress { width:100%; height:10px; border-radius:5px; }
+    .menu { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:15px; }
+    .btn { flex:1 1 120px; padding:10px; text-align:center; background:#a29bfe; color:#fff; border:none; border-radius:8px; cursor:pointer; transition:background 0.2s, transform 0.1s; }
+    .btn:hover { background:#6c5ce7; }
+    .btn:active { transform:scale(0.95); }
+    #sub-menu, #battle-area, #shopModal, #resultModal, #friendsArea, #statsArea { display:none; }
+    #battle-area, #friendsArea, #statsArea { flex-direction:column; }
+    #battle-area input { margin-bottom:10px; padding:8px; border:1px solid #ccc; border-radius:4px; }
+    .modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:10; }
+    .modal-content { background:#fff; padding:20px; border-radius:8px; box-shadow:0 2px 10px rgba(0,0,0,0.2); width:90%; max-width:300px; display:flex; flex-direction:column; align-items:center; }
+    .close-btn { background:#d63031; color:#fff; }
+    @keyframes pop {0%{transform:scale(1);}50%{transform:scale(1.15);}100%{transform:scale(1);} }
+    .pop { animation:pop 0.2s ease-in-out; }
+    #statsChart { width:100%; height:200px; }
+  </style>
+</head>
+<body>
+  <h1>🚀 LimurCoin Combat</h1>
+  <div id="stats" class="panel">
+    <div>💰 Coinlar: <span id="coins">0</span></div>
+    <div>🛡 Boostlar: <span id="boosts">0</span></div>
+    <div>🐒 Limurlar: <span id="lemurs">0</span></div>
+    <div>🚀 Daraja: <span id="level">1</span></div>
+    <div>🏆 Reyting: <span id="rank">0</span></div>
+    <progress id="xpBar" value="0" max="100"></progress>
+  </div>
+
+  <div class="menu" id="main-menu">
+    <button class="btn" data-action="profile">📊 Profil</button>
+    <button class="btn" data-action="my_lemurs">🐒 Mening Limurlar</button>
+    <button class="btn" data-action="boost_menu">🛡 Boostlar</button>
+    <button class="btn" data-action="buy_lemur">🛒 Limur sotib olish</button>
+    <button class="btn" data-action="shop">🛍️ Do‘kon</button>
+    <button class="btn" data-action="attack">🗡 Hujum</button>
+    <button class="btn" data-action="friends">👥 Do‘stlar</button>
+    <button class="btn" data-action="stats">📈 Statistikalar</button>
+    <button class="btn" data-action="daily_bonus">🎁 Kunlik sovg'a</button>
+  </div>
+
+  <div id="sub-menu" class="panel"></div>
+
+  <div id="battle-area" class="panel">
+    <div>Hujum qilmoqchi bo'lgan ID:</div>
+    <input id="defender-id" type="text" placeholder="Foydalanuvchi ID" />
+    <button class="btn" id="send-attack">Yuborish</button>
+    <button class="btn close-btn" id="cancel-attack">Bekor</button>
+  </div>
+
+  <div id="friendsArea" class="panel">
+    <div><strong>📋 Do‘stlar ro‘yxati:</strong></div>
+    <div id="friendsList">Hech kim yo‘q.</div>
+    <button class="btn close-btn" onclick="closeFriends()">Yopish</button>
+  </div>
+
+  <div id="statsArea" class="panel">
+    <div><strong>📈 Statistikalar</strong></div>
+    <canvas id="statsChart"></canvas>
+    <button class="btn close-btn" onclick="closeStats()">Yopish</button>
+  </div>
+
+  <div class="modal-overlay" id="shopModal">
+    <div class="modal-content">
+      <h2>Do‘kon</h2>
+      <button onclick="buyMultiplier()" class="btn">2× Multiplikator (500) </button>
+      <button onclick="buyAutoClicker()" class="btn">🤖 Auto Limur (300)</button>
+      <button onclick="closeShop()" class="btn close-btn">Yopish</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="resultModal">
+    <div class="modal-content">
+      <div class="result-text" id="resultText"></div>
+      <div><img id="winnerImg" src="" alt="Winner" /><img id="loserImg" src="" alt="Loser" /></div>
+      <button onclick="closeResult()" class="btn">🔄 Yangi jang</button>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp; if(tg) tg.expand();
+    // State
+    let coins=0, boosts=0, lemurs=0, rank=0, level=1, xp=0, multiplier=1, autoActive=false;
+    let friends=[], coinsHistory=[];
+    // Elements
+    const coinsEl=document.getElementById('coins'), boostsEl=document.getElementById('boosts');
+    const lemursEl=document.getElementById('lemurs'), rankEl=document.getElementById('rank');
+    const levelEl=document.getElementById('level'), xpBar=document.getElementById('xpBar');
+    const mainMenu=document.getElementById('main-menu'), subMenu=document.getElementById('sub-menu');
+    const battleArea=document.getElementById('battle-area'), shopModal=document.getElementById('shopModal');
+    const resultOverlay=document.getElementById('resultModal'), resultText=document.getElementById('resultText');
+    const winnerImg=document.getElementById('winnerImg'), loserImg=document.getElementById('loserImg');
+    const friendsArea=document.getElementById('friendsArea'), friendsList=document.getElementById('friendsList');
+    const statsArea=document.getElementById('statsArea');
+    const defenderInput=document.getElementById('defender-id');
+    const statsCtx=document.getElementById('statsChart').getContext('2d');
+    let statsChart;
+
+    // Save/Load
+    function load(){const d=JSON.parse(localStorage.getItem('lc_state')||'{}'); Object.assign(window,d);}
+    function save(){localStorage.setItem('lc_state',JSON.stringify({coins,boosts,lemurs,rank,level,xp,multiplier,friends,coinsHistory}));}
+
+    // Refresh UI
+    function refresh(){
+      coinsEl.innerText=coins; boostsEl.innerText=boosts; lemursEl.innerText=lemurs; rankEl.innerText=rank;
+      levelEl.innerText=level; xpBar.max=level*100; xpBar.value=xp;
+      coinsHistory.push(coins);
+    }
+
+    // XP & Level
+    function addXP(n){ xp+=n; if(xp>=level*100){ xp-=level*100; level++; alert(`🎉 Daraja +1: ${level}`); } refresh(); save(); }
+
+    // Shop actions
+    function openShop(){ shopModal.style.display='flex'; }
+    function closeShop(){ shopModal.style.display='none'; }
+    function buyMultiplier(){ if(coins>=500){ coins-=500; multiplier*=2; alert('2× multiplikator!'); refresh(); save(); } }
+    function buyAutoClicker(){ if(coins>=300&&!autoActive){ coins-=300; autoActive=true; refresh(); save(); setInterval(()=>{ coins+=multiplier; addXP(multiplier); },1000); } }
+
+    // Friends
+    function openFriends(){ friendsArea.style.display='flex'; }
+    function closeFriends(){ friendsArea.style.display='none'; mainMenu.style.display='flex'; }
+
+    // Stats Chart
+    function openStats(){ statsArea.style.display='flex';
+      const labels=coinsHistory.map((_,i)=>i+1);
+      if(statsChart) statsChart.destroy();
+      statsChart=new Chart(statsCtx,{ type:'line', data:{ labels, datasets:[{ label:'Coinlar vaqti', data:coinsHistory, fill:false, tension:0.3 }] }, options:{ responsive:true, scales:{ x:{ title:{ display:true, text:'Oyin bosqichlari' } }, y:{ title:{ display:true, text:'Coinlar' } } } } });
+    }
+    function closeStats(){ statsArea.style.display='none'; mainMenu.style.display='flex'; }
+
+    // Battle result
+    function closeResult(){ resultOverlay.style.display='none'; mainMenu.style.display='flex'; }
+
+    // Send to bot
+    function sendAction(type,payload={}){ if(tg) tg.sendData(JSON.stringify({ type, ...payload })); }
+
+    // Main menu
+    mainMenu.addEventListener('click',e=>{
+      const a=e.target.dataset.action; if(!a) return;
+      subMenu.innerHTML=''; battleArea.style.display='none'; closeShop(); closeResult(); closeFriends(); closeStats();
+      switch(a){
+        case 'profile': sendAction('profile'); break;
+        case 'my_lemurs': sendAction('my_lemurs'); break;
+        case 'boost_menu': openSubMenu([{ label:'Tezlik (100)', action:'buy_boost', payload:{ key:'speed' } },{ label:'X2 (200)', action:'buy_boost', payload:{ key:'double' } }]); break;
+        case 'buy_lemur': openSubMenu([{ label:'Oddiy (50)', action:'buy_lemur', payload:{ tier:1 } },{ label:'Premium (150)', action:'buy_lemur', payload:{ tier:2 } }]); break;
+        case 'shop': openShop(); break;
+        case 'attack': battleArea.style.display='flex'; mainMenu.style.display='none'; break;
+        case 'friends': openFriends(); break;
+        case 'stats': openStats(); break;
+        case 'daily_bonus': sendAction('daily_bonus'); break;
+      }
+    });
+
+    function openSubMenu(items){ mainMenu.style.display='none'; subMenu.style.display='flex'; items.forEach(i=>{ const b=document.createElement('button'); b.className='btn'; b.innerText=i.label; b.onclick=()=>sendAction(i.action,i.payload); subMenu.appendChild(b); }); const back=document.createElement('button'); back.className='btn close-btn'; back.innerText='⬅️ Orqaga'; back.onclick=()=>{ subMenu.style.display='none'; mainMenu.style.display='flex'; }; subMenu.appendChild(back); }
+
+    document.getElementById('send-attack').onclick=()=>{ const id=defenderInput.value.trim(); if(id) sendAction('attack',{ defender_id:id }); };
+    document.getElementById('cancel-attack').onclick=()=>{ battleArea.style.display='none'; mainMenu.style.display='flex'; };
+
+    // Handle bot and init
+    window.addEventListener('message',e=>{ const d=JSON.parse(e.data);
+      if(d.coins!==undefined) coins=d.coins;
+      if(d.boosts!==undefined) boosts=d.boosts;
+      if(d.lemurs!==undefined) lemurs=d.lemurs;
+      if(d.rank!==undefined) rank=d.rank;
+      if(d.level!==undefined) level=d.level;
+      if(d.xp!==undefined) xp=d.xp;
+      if(d.friends!==undefined) { friends=d.friends; friendsList.innerText=friends.join(', ')||'Hech kim yo‘q.'; }
+      if(d.battle_result){ mainMenu.style.display='none'; battleArea.style.display='none'; resultOverlay.style.display='flex'; resultText.innerText=d.battle_result.text; winnerImg.src=d.battle_result.winner_img; loserImg.src=d.battle_result.loser_img; }
+      refresh(); save();
+    });
+
+    load(); refresh();
+  </script>
+</body>
+</html>
